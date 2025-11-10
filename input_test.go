@@ -6,11 +6,12 @@ package liner
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"testing"
 )
 
 func (s *State) expectRune(t *testing.T, r rune) {
-	item, err := s.readNext()
+	item, err := s.readNext(context.TODO())
 	if err != nil {
 		t.Fatalf("Expected rune '%c', got error %s\n", r, err)
 	}
@@ -24,7 +25,7 @@ func (s *State) expectRune(t *testing.T, r rune) {
 }
 
 func (s *State) expectAction(t *testing.T, a action) {
-	item, err := s.readNext()
+	item, err := s.readNext(context.TODO())
 	if err != nil {
 		t.Fatalf("Expected Action %d, got error %s\n", a, err)
 	}

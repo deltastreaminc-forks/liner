@@ -6,6 +6,7 @@ package liner
 import (
 	"bufio"
 	"container/ring"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -309,7 +310,7 @@ func calculateColumns(screenWidth int, items []string) (numColumns, numRows, max
 	return
 }
 
-func (s *State) printedTabs(items []string) func(tabDirection) (string, error) {
+func (s *State) printedTabs(ctx context.Context, items []string) func(tabDirection) (string, error) {
 	numTabs := 1
 	prefix := longestCommonPrefix(items)
 	return func(direction tabDirection) (string, error) {
@@ -322,7 +323,7 @@ func (s *State) printedTabs(items []string) func(tabDirection) (string, error) {
 				fmt.Printf("\nDisplay all %d possibilities? (y or n) ", len(items))
 			prompt:
 				for {
-					next, err := s.readNext()
+					next, err := s.readNext(ctx)
 					if err != nil {
 						return prefix, err
 					}
@@ -362,7 +363,7 @@ func (s *State) printedTabs(items []string) func(tabDirection) (string, error) {
 	}
 }
 
-func (s *State) tabComplete(p []rune, line []rune, pos int) ([]rune, int, interface{}, error) {
+func (s *State) tabComplete(ctx context.Context, p []rune, line []rune, pos int) ([]rune, int, interface{}, error) {
 	if s.completer == nil {
 		return line, pos, rune(esc), nil
 	}
@@ -379,7 +380,7 @@ func (s *State) tabComplete(p []rune, line []rune, pos int) ([]rune, int, interf
 	direction := tabForward
 	tabPrinter := s.circularTabs(list)
 	if s.tabStyle == TabPrints {
-		tabPrinter = s.printedTabs(list)
+		tabPrinter = s.printedTabs(ctx, list)
 	}
 
 	for {
@@ -392,7 +393,7 @@ func (s *State) tabComplete(p []rune, line []rune, pos int) ([]rune, int, interf
 			return line, pos, rune(esc), err
 		}
 
-		next, err := s.readNext()
+		next, err := s.readNext(ctx)
 		if err != nil {
 			return line, pos, rune(esc), err
 		}
@@ -414,7 +415,7 @@ func (s *State) tabComplete(p []rune, line []rune, pos int) ([]rune, int, interf
 }
 
 // reverse intelligent search, implements a bash-like history search.
-func (s *State) reverseISearch(origLine []rune, origPos int) ([]rune, int, interface{}, error) {
+func (s *State) reverseISearch(ctx context.Context, origLine []rune, origPos int) ([]rune, int, interface{}, error) {
 	p := "(reverse-i-search)`': "
 	err := s.refresh([]rune(p), origLine, origPos)
 	if err != nil {
@@ -436,7 +437,7 @@ func (s *State) reverseISearch(origLine []rune, origPos int) ([]rune, int, inter
 	historyPos := len(history) - 1
 
 	for {
-		next, err := s.readNext()
+		next, err := s.readNext(ctx)
 		if err != nil {
 			return []rune(foundLine), foundPos, rune(esc), err
 		}
@@ -516,7 +517,7 @@ func (s *State) reverseISearch(origLine []rune, origPos int) ([]rune, int, inter
 // new node in the end of the kill ring, and move the current pointer to the new
 // node. If mode is 1 or 2 it appends or prepends the text to the current entry
 // of the killRing.
-func (s *State) addToKillRing(text []rune, mode int) {
+func (s *State) addToKillRing(ctx context.Context, text []rune, mode int) {
 	// Don't use the same underlying array as text
 	killLine := make([]rune, len(text))
 	copy(killLine, text)
@@ -548,7 +549,7 @@ func (s *State) addToKillRing(text []rune, mode int) {
 	s.killRing.Value = killLine
 }
 
-func (s *State) yank(p []rune, text []rune, pos int) ([]rune, int, interface{}, error) {
+func (s *State) yank(ctx context.Context, p []rune, text []rune, pos int) ([]rune, int, interface{}, error) {
 	if s.killRing == nil {
 		return text, pos, rune(esc), nil
 	}
@@ -570,7 +571,7 @@ func (s *State) yank(p []rune, text []rune, pos int) ([]rune, int, interface{}, 
 			return line, pos, 0, err
 		}
 
-		next, err := s.readNext()
+		next, err := s.readNext(ctx)
 		if err != nil {
 			return line, pos, next, err
 		}
@@ -592,8 +593,8 @@ func (s *State) yank(p []rune, text []rune, pos int) ([]rune, int, interface{}, 
 // Prompt displays p and returns a line of user input, not including a trailing
 // newline character. An io.EOF error is returned if the user signals end-of-file
 // by pressing Ctrl-D. Prompt allows line editing if the terminal supports it.
-func (s *State) Prompt(prompt string) (string, error) {
-	return s.PromptWithSuggestion(prompt, "", 0)
+func (s *State) Prompt(ctx context.Context, prompt string) (string, error) {
+	return s.PromptWithSuggestion(ctx, prompt, "", 0)
 }
 
 // PromptWithSuggestion displays prompt and an editable text with cursor at
@@ -601,7 +602,7 @@ func (s *State) Prompt(prompt string) (string, error) {
 // is negative or greater than length of text (in runes). Returns a line of user input, not
 // including a trailing newline character. An io.EOF error is returned if the user
 // signals end-of-file by pressing Ctrl-D.
-func (s *State) PromptWithSuggestion(prompt string, text string, pos int) (string, error) {
+func (s *State) PromptWithSuggestion(ctx context.Context, prompt string, text string, pos int) (string, error) {
 	for _, r := range prompt {
 		if unicode.Is(unicode.C, r) {
 			return "", ErrInvalidPrompt
@@ -649,7 +650,7 @@ restart:
 
 mainLoop:
 	for {
-		next, err := s.readNext()
+		next, err := s.readNext(ctx)
 	haveNext:
 		if err != nil {
 			if s.shouldRestart != nil && s.shouldRestart(err) {
@@ -716,9 +717,9 @@ mainLoop:
 					s.doBeep()
 				} else {
 					if killAction > 0 {
-						s.addToKillRing(line[pos:], 1) // Add in apend mode
+						s.addToKillRing(ctx, line[pos:], 1) // Add in apend mode
 					} else {
-						s.addToKillRing(line[pos:], 0) // Add in normal mode
+						s.addToKillRing(ctx, line[pos:], 0) // Add in normal mode
 					}
 
 					killAction = 2 // Mark that there was a kill action
@@ -804,9 +805,9 @@ mainLoop:
 				}
 			case ctrlU: // Erase line before cursor
 				if killAction > 0 {
-					s.addToKillRing(line[:pos], 2) // Add in prepend mode
+					s.addToKillRing(ctx, line[:pos], 2) // Add in prepend mode
 				} else {
-					s.addToKillRing(line[:pos], 0) // Add in normal mode
+					s.addToKillRing(ctx, line[:pos], 0) // Add in normal mode
 				}
 
 				killAction = 2 // Mark that there was some killing
@@ -814,16 +815,16 @@ mainLoop:
 				pos = 0
 				s.needRefresh = true
 			case ctrlW: // Erase word
-				pos, line, killAction = s.eraseWord(pos, line, killAction)
+				pos, line, killAction = s.eraseWord(ctx, pos, line, killAction)
 			case ctrlY: // Paste from Yank buffer
-				line, pos, next, err = s.yank(p, line, pos)
+				line, pos, next, err = s.yank(ctx, p, line, pos)
 				goto haveNext
 			case ctrlR: // Reverse Search
-				line, pos, next, err = s.reverseISearch(line, pos)
+				line, pos, next, err = s.reverseISearch(ctx, line, pos)
 				s.needRefresh = true
 				goto haveNext
 			case tab: // Tab completion
-				line, pos, next, err = s.tabComplete(p, line, pos)
+				line, pos, next, err = s.tabComplete(ctx, p, line, pos)
 				goto haveNext
 			// Catch keys that do nothing, but you don't want them to beep
 			case esc:
@@ -973,13 +974,13 @@ mainLoop:
 				}
 				// Save the result on the killRing
 				if killAction > 0 {
-					s.addToKillRing(buf, 2) // Add in prepend mode
+					s.addToKillRing(ctx, buf, 2) // Add in prepend mode
 				} else {
-					s.addToKillRing(buf, 0) // Add in normal mode
+					s.addToKillRing(ctx, buf, 0) // Add in normal mode
 				}
 				killAction = 2 // Mark that there was some killing
 			case altBs: // Erase word
-				pos, line, killAction = s.eraseWord(pos, line, killAction)
+				pos, line, killAction = s.eraseWord(ctx, pos, line, killAction)
 			case winch: // Window change
 				if s.multiLineMode {
 					if s.maxRows-s.cursorRows > 0 {
@@ -1014,7 +1015,7 @@ mainLoop:
 
 // PasswordPrompt displays p, and then waits for user input. The input typed by
 // the user is not displayed in the terminal.
-func (s *State) PasswordPrompt(prompt string) (string, error) {
+func (s *State) PasswordPrompt(ctx context.Context, prompt string) (string, error) {
 	for _, r := range prompt {
 		if unicode.Is(unicode.C, r) {
 			return "", ErrInvalidPrompt
@@ -1044,7 +1045,7 @@ restart:
 
 mainLoop:
 	for {
-		next, err := s.readNext()
+		next, err := s.readNext(ctx)
 		if err != nil {
 			if s.shouldRestart != nil && s.shouldRestart(err) {
 				goto restart
@@ -1123,7 +1124,7 @@ func (s *State) tooNarrow(prompt string) (string, error) {
 	return s.promptUnsupported(prompt)
 }
 
-func (s *State) eraseWord(pos int, line []rune, killAction int) (int, []rune, int) {
+func (s *State) eraseWord(ctx context.Context, pos int, line []rune, killAction int) (int, []rune, int) {
 	if pos == 0 {
 		s.doBeep()
 		return pos, line, killAction
@@ -1153,9 +1154,9 @@ func (s *State) eraseWord(pos int, line []rune, killAction int) (int, []rune, in
 		newBuf = append(newBuf, buf[i])
 	}
 	if killAction > 0 {
-		s.addToKillRing(newBuf, 2) // Add in prepend mode
+		s.addToKillRing(ctx, newBuf, 2) // Add in prepend mode
 	} else {
-		s.addToKillRing(newBuf, 0) // Add in normal mode
+		s.addToKillRing(ctx, newBuf, 0) // Add in normal mode
 	}
 	killAction = 2 // Mark that there was some killing
 

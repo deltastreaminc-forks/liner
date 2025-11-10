@@ -5,6 +5,7 @@ package liner
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"os"
 	"os/signal"
@@ -130,7 +131,7 @@ func (s *State) nextPending(timeout <-chan time.Time) (rune, error) {
 	}
 }
 
-func (s *State) readNext() (interface{}, error) {
+func (s *State) readNext(ctx context.Context) (interface{}, error) {
 	if len(s.pending) > 0 {
 		rv := s.pending[0]
 		s.pending = s.pending[1:]
@@ -149,6 +150,8 @@ func (s *State) readNext() (interface{}, error) {
 	case <-s.winch:
 		s.getColumns()
 		return winch, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
 	}
 	if r != esc {
 		return r, nil
