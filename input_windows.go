@@ -2,6 +2,7 @@ package liner
 
 import (
 	"bufio"
+	"context"
 	"os"
 	"syscall"
 	"unicode/utf16"
@@ -167,7 +168,7 @@ func (s *State) inputWaiting() bool {
 	return num > 1
 }
 
-func (s *State) readNext() (interface{}, error) {
+func (s *State) readNext(ctx context.Context) (interface{}, error) {
 	if s.repeat > 0 {
 		s.repeat--
 		return s.key, nil
